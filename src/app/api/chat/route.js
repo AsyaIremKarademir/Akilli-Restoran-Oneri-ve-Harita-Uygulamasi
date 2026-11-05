@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSystemPrompt, MAX_CHAT_MESSAGES, MAX_CHAT_PLACES, MAX_MESSAGE_LENGTH, ruleBasedReply } from "@/lib/chat";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
 function sanitize(body) {
   const b = body;
