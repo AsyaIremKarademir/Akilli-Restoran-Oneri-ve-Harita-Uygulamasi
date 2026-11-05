@@ -8,7 +8,7 @@ Lezzet Radarı, kullanıcının anlık konumunu bularak çevresindeki restoran, 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?logo=leaflet&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-48_test-6E9F18?logo=vitest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-56_test-6E9F18?logo=vitest&logoColor=white)
 
 ---
 
@@ -252,7 +252,7 @@ Her mekan beş kritere göre 0 ile 1 arasında puanlanır; bu puanların ağırl
 
 ##  Test ve CI/CD
 
-Projede **Vitest** ile yazılmış **48 test** bulunur:
+Projede **Vitest** ile yazılmış **56 test** bulunur:
 
 | Test dosyası | Kapsam |
 |---|---|
