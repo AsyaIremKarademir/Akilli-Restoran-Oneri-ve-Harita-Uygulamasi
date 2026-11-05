@@ -79,6 +79,40 @@ describe("ruleBasedReply", () => {
     expect(res.reply).not.toMatch(/mutfağa/);
   });
 
+  it("genel bir yemek isteğinde sadece kafe/tatlı sunan mekanları önermemeli", () => {
+    for (const text of ["Yemek yiyebileceğim bir yer önerir misin", "çok acıktım", "where can I get dinner"]) {
+      const res = ruleBasedReply(request(text, PLACES, text.startsWith("where") ? "en" : "tr"));
+      expect(res.placeIds).not.toContain("node/5");
+      expect(res.placeIds.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("takip sorusunda ('başka var mı?') yemek niyetini korumalı", () => {
+    const req = request("başka var mı?", PLACES);
+    req.messages = [
+      { role: "user", content: "acıktım" },
+      { role: "assistant", content: "..." },
+      { role: "user", content: "başka var mı?" },
+    ];
+    expect(ruleBasedReply(req).placeIds).not.toContain("node/5");
+  });
+
+  it("'ne yesem', 'karnım aç' gibi ifadeleri yemek isteği saymalı", () => {
+    for (const text of ["ne yesem", "karnım aç", "akşam için bir yer"]) {
+      expect(ruleBasedReply(request(text, PLACES)).placeIds).not.toContain("node/5");
+    }
+  });
+
+  it("istenen mutfak yoksa yerine kafe önermemeli", () => {
+    const res = ruleBasedReply(request("sushi", PLACES));
+    expect(res.placeIds).not.toContain("node/5");
+  });
+
+  it("kahve ya da tatlı istendiğinde kafeleri yine önermeli", () => {
+    expect(ruleBasedReply(request("kahve içelim", PLACES)).placeIds).toContain("node/5");
+    expect(ruleBasedReply(request("yemekten sonra tatlı", PLACES)).placeIds).toContain("node/3");
+  });
+
   it("eşleşme yoksa açıklayıcı bir mesaj dönmeli", () => {
     const res = ruleBasedReply(request("lüks bir yer", [place({ priceLevel: 1 })]));
     expect(res.placeIds).toEqual([]);
@@ -115,6 +149,41 @@ describe("selectChatCandidates", () => {
     expect(ids).toContain("node/pizza");
     expect(ids.length).toBeLessThanOrEqual(60);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("yemek istendiğinde aday listesini yakındaki kafelerle doldurmamalı", () => {
+    const scored = [
+      ...Array.from({ length: 80 }, (_, i) => ({
+        place: { id: `node/c${i}`, name: `Kafe ${i}`, type: "cafe", categories: ["cafe"], cuisines: [], priceLevel: 2 },
+        distance: 100 + i,
+        score: 90,
+      })),
+      {
+        place: { id: "node/r", name: "Lokanta", type: "restaurant", categories: ["homestyle"], cuisines: [], priceLevel: 2 },
+        distance: 1200,
+        score: 40,
+      },
+    ];
+    expect(selectChatCandidates(scored, "yemek yemek istiyorum").map((p) => p.id)).toEqual(["node/r"]);
+    expect(selectChatCandidates(scored, "kahve").length).toBeGreaterThan(1);
+    expect(selectChatCandidates(scored, "daha yakın olsun", ["yemek yemek istiyorum"]).map((p) => p.id)).toEqual([
+      "node/r",
+    ]);
+  });
+
+  it("önerilerde hiç yemek yeri yoksa tüm yakın mekanlara bakmalı", () => {
+    const cafe = {
+      place: { id: "node/c", name: "Kafe", type: "cafe", categories: ["cafe"], cuisines: [], priceLevel: 2 },
+      distance: 100,
+      score: 90,
+    };
+    const restaurant = {
+      place: { id: "node/r", name: "Lokanta", type: "restaurant", categories: ["other"], cuisines: [], priceLevel: 2 },
+      distance: 300,
+      score: 50,
+    };
+    const ids = selectChatCandidates([cafe], "acıktım", [], [cafe, restaurant]).map((p) => p.id);
+    expect(ids).toEqual(["node/r"]);
   });
 });
 

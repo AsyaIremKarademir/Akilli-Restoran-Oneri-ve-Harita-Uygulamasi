@@ -97,6 +97,29 @@ describe("POST /api/chat", () => {
     expect(res).toEqual({ mode: "ai", reply: "Pizzacı'yı dene!", placeIds: ["node/1"] });
   });
 
+  it("kotası dolan modeli tekrar denemeden yedek modele geçmeli ve sonraki isteklerde atlamalı", async () => {
+    vi.resetModules();
+    const { POST: freshChat } = await import("./chat/route");
+    const send = (b) => freshChat(new NextRequest("http://localhost/api/chat", { method: "POST", body: JSON.stringify(b) }));
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const ok = () =>
+      Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ reply: "Pizzacı!", placeIds: ["node/1"] }) }] } }],
+      });
+    const fetchMock = vi.fn(async (url) =>
+      url.includes("-lite")
+        ? ok()
+        : Response.json({ error: { details: [{ retryDelay: "3600s" }] } }, { status: 429 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await (await send(body)).json()).mode).toBe("ai");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((await (await send(body)).json()).mode).toBe("ai");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toContain("-lite");
+  });
+
   it("Gemini hata verirse kural tabanlı moda düşmeli", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("quota", { status: 429 })));

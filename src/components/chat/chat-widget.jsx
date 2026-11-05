@@ -44,8 +44,10 @@ export function ChatWidget() {
       return;
     }
 
-    const source = recommendations.length ? recommendations : nearby.map((n) => ({ ...n, score: 50 }));
-    const pool = selectChatCandidates(source, content);
+    const unscored = nearby.map((n) => ({ ...n, score: 50 }));
+    const source = recommendations.length ? recommendations : unscored;
+    const previousUserTexts = messages.filter((m) => m.role === "user").map((m) => m.content);
+    const pool = selectChatCandidates(source, content, previousUserTexts, unscored);
 
     setPending(true);
     try {

@@ -3,8 +3,21 @@ import { buildSystemPrompt, MAX_CHAT_MESSAGES, MAX_CHAT_PLACES, MAX_MESSAGE_LENG
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
-const GEMINI_ATTEMPTS = [GEMINI_MODEL, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL];
+const GEMINI_MODELS = [...new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL])];
 const RETRY_DELAY_MS = 600;
+const DEFAULT_COOLDOWN_MS = 60_000;
+
+/**
+ * Kotası dolan modeller (model → tekrar denenebileceği zaman, ms). 429 alan bir modeli yeniden denemek
+ * günlük kotayı boşa harcar ve her mesajı yavaşlatır; bekleme süresi bitene kadar doğrudan sonrakine geçeriz.
+ */
+const exhaustedUntil = new Map();
+
+/** 429 gövdesindeki `retryDelay` ("67359s") değerini ms'ye çevirir. */
+function retryDelayMs(text) {
+  const m = text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  return m ? Number(m[1]) * 1000 : DEFAULT_COOLDOWN_MS;
+}
 
 function sanitize(body) {
   const b = body;
@@ -49,18 +62,31 @@ async function askGemini(req, apiKey) {
   });
   const deadline = AbortSignal.timeout(25_000);
 
-  let res;
-  for (const [i, model] of GEMINI_ATTEMPTS.entries()) {
-    if (i > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const call = (model) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body,
       signal: deadline,
     });
-    if (res.status !== 503 && res.status !== 429) break;
+
+  let res;
+  let lastError = "tüm modellerin kotası dolu";
+  for (const model of GEMINI_MODELS) {
+    if ((exhaustedUntil.get(model) ?? 0) > Date.now()) continue;
+    res = await call(model);
+    // 503 (geçici yoğunluk) aynı modelde bir kez daha denemeye değer; 429 (kota) değmez.
+    if (res.status === 503) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      res = await call(model);
+    }
+    if (res.ok) break;
+    const text = await res.text();
+    lastError = `${model} HTTP ${res.status}: ${text.slice(0, 300)}`;
+    if (res.status === 429) exhaustedUntil.set(model, Date.now() + retryDelayMs(text));
+    res = undefined;
   }
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${await res.text()}`);
+  if (!res) throw new Error(`Gemini kullanılamadı (${lastError})`);
 
   const json = await res.json();
 
