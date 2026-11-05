@@ -33,7 +33,7 @@ export default function AppShell() {
           <div className="relative isolate h-[42dvh] shrink-0 md:order-2 md:h-auto md:flex-1">
             <MapView />
           </div>
-          <aside className="flex min-h-0 flex-1 flex-col border-t md:order-1 md:w-[420px] md:flex-none md:border-t-0 md:border-r">
+          <aside className="flex min-h-0 flex-1 flex-col border-t md:order-1 md:w-[26rem] md:flex-none md:border-t-0 md:border-r">
             <PlacePanel />
           </aside>
         </main>
