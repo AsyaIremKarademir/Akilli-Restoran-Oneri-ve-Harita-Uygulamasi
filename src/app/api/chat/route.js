@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { buildSystemPrompt, MAX_CHAT_MESSAGES, MAX_CHAT_PLACES, MAX_MESSAGE_LENGTH, ruleBasedReply } from "@/lib/chat";
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+const GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
+const GEMINI_ATTEMPTS = [GEMINI_MODEL, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL];
+const RETRY_DELAY_MS = 600;
 
 function sanitize(body) {
   const b = body;
@@ -26,28 +29,37 @@ async function askGemini(req, apiKey) {
     parts: [{ text: m.content }],
   }));
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: buildSystemPrompt(req) }] },
-      contents,
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            reply: { type: "STRING" },
-            placeIds: { type: "ARRAY", items: { type: "STRING" } },
-          },
-          required: ["reply", "placeIds"],
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: buildSystemPrompt(req) }] },
+    contents,
+    generationConfig: {
+      temperature: 0.6,
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingLevel: "low" },
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          reply: { type: "STRING" },
+          placeIds: { type: "ARRAY", items: { type: "STRING" } },
         },
+        required: ["reply", "placeIds"],
       },
-    }),
-    signal: AbortSignal.timeout(25_000),
+    },
   });
+  const deadline = AbortSignal.timeout(25_000);
+
+  let res;
+  for (const [i, model] of GEMINI_ATTEMPTS.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body,
+      signal: deadline,
+    });
+    if (res.status !== 503 && res.status !== 429) break;
+  }
   if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${await res.text()}`);
 
   const json = await res.json();
